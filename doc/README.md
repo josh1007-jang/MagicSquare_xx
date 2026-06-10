@@ -17,7 +17,8 @@
 | `Report/MomTest_STEP1_MagicSquare_xx.md` | 문제 정의, 페르소나, 증거 |
 | `Report/Session3_Workbook_MagicSquare_xx.md` | R-G-I-O, 성공 기준, 8계층 |
 | `.cursorrules` | Entity · Control · Boundary · TDD 규칙 |
-| `src/validate_lines.py`, `tests/test_validate_lines.py` | API 계약, Test Loop (TC1~TC3) |
+| `src/validate_lines.py`, `tests/test_validate_lines.py` | API 계약, Test Loop (TC1~TC3 + incomplete + R1) |
+| `Report/01.REPORT.md` | Harness·커서룰·TDD 커맨드 구축 |
 | `Report/02.REPORT.md` | 워크북 ↔ 계약 갭 (§12) |
 
 **충돌 시 우선순위:** `PRD.md` §7~§9 (API 계약) → `.cursorrules`
@@ -30,12 +31,13 @@
 |---|------|------|
 | 1 | 개요 | 프로젝트 한 줄 설명 |
 | 2 | 문제 정의 | Mom Test |
-| 3~4 | R-G-I-O · 성공 기준 | SC1~SC4 |
+| 3~4 | R-G-I-O · 성공 기준 | SC1~SC5 |
 | 5 | 범위 | In / Out Scope |
 | 6~7 | ECB · Entity | 10선, 마법상수 34 |
 | 8 | Control — API | `validate_lines(grid)` 계약 |
-| 9 | Boundary — Test Loop | TC1~TC3, incomplete |
-| 10 | TDD · 개발 프로세스 | RED / GREEN / REFACTOR |
+| 9 | Boundary — Test Loop | TC1~TC3, incomplete, R1 fail |
+| 10 | TDD · 개발 프로세스 | RED / GREEN / REFACTOR, Skills, Commands |
+| 11 | 프로젝트 구조 | 디렉터리 맵 |
 | 12 | 워크북 ↔ 계약 갭 | 알려진 차이 |
 | 13 | 마일스톤 | 현재 상태 |
 | 14 | 향후 검토 | v0.2+ 후보 |
@@ -60,15 +62,27 @@ result = validate_lines(grid)
 
 ---
 
+## Test Loop (요약)
+
+| 테스트 | 시나리오 | 기대 |
+|--------|----------|------|
+| TC1 | 10선 모두 합 34 | `pass`, `failed_lines == []` |
+| TC2 | 행·열 OK, D1 불일치 | `fail`, `"D1" in failed_lines` |
+| TC3 | 행·열 OK, D2 불일치 | `fail`, `"D2" in failed_lines` |
+| incomplete | TC1에 빈칸(`0`) 1개 | `incomplete` |
+| R1 fail | TC1 기반 R1 합 ≠ 34 | `fail`, `"R1" in failed_lines` |
+
+---
+
 ## 관련 폴더
 
 | 폴더 | 역할 |
 |------|------|
 | `src/` | Control 구현 (`validate_lines`) |
-| `tests/` | Boundary — Test Loop |
-| `Report/` | Mom Test, 워크북, 세션 Export |
+| `tests/` | Boundary — Test Loop (5 tests) |
+| `Report/` | Mom Test, 워크북, 세션 Export (`01`, `02`) |
 | `Prompting/` | 프롬프트·Transcript |
-| `.cursor/` | TDD·Export 슬래시 커맨드, Skills |
+| `.cursor/` | TDD·Export 슬래시 커맨드 8종, Skills |
 
 ---
 
@@ -76,12 +90,14 @@ result = validate_lines(grid)
 
 | 단계 | 상태 |
 |------|:----:|
-| Mom Test · 워크북 · Harness · RED | ✅ |
+| Mom Test · 워크북 · Harness · Skills · Commands | ✅ |
+| RED (5 tests) | ✅ |
 | GREEN (`validate_lines` 구현) | 🔲 |
 | REFACTOR | 🔲 |
 
 ```bash
 pytest tests/test_validate_lines.py -v
+# → 5 failed — NotImplementedError (RED, GREEN 대기)
 ```
 
 ---
