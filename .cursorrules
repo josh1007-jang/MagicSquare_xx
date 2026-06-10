@@ -1,0 +1,58 @@
+# MagicSquare_xx — 세션 3 (마방진 10선 검증)
+
+프로젝트: 4×4 부분 마방진 격자의 행·열·대각선 합을 빠짐없이 검증한다.
+설계 참고: `Report/Session3_Workbook_MagicSquare_xx.md`
+
+---
+
+## Entity (도메인·불변 규칙)
+
+- 격자: 4×4 정수 2차원 리스트. `0` = 빈칸, 채워진 칸은 `1`~`16` (중복·범위 밖 값은 도메인 위반).
+- 마법상수: `34`. 각 선(行)의 합이 34여야 pass 판정 대상이다.
+- 검증 선 10개 (반드시 모두 검사; 하나라도 생략 금지):
+  - 행: `R1`, `R2`, `R3`, `R4`
+  - 열: `C1`, `C2`, `C3`, `C4`
+  - 대각선: `D1`(좌상→우하), `D2`(우상→좌하)
+- 빈칸(`0`)이 하나라도 있으면 완성 판정 불가 → `incomplete`.
+- 행·열만 맞고 대각선 하나만 틀린 경우도 `fail`이며, 해당 선을 `failed_lines`에 명시한다.
+
+---
+
+## Control (유스케이스·API)
+
+- 진입점: `src/validate_lines.py` — `validate_lines(grid)`
+- 반환: dict 한 개
+  - `status`: `"pass"` | `"fail"` | `"incomplete"`
+  - `failed_lines`: 실패·미완성 관련 선 ID 리스트 (예: `["D1"]`, pass 시 `[]`)
+- Control은 Entity 규칙을 위반하지 않는다. 10선 전수 검사 후 status를 결정한다.
+- 솔버·빈칸 자동 채우기·UI·배포는 이번 범위 밖.
+
+---
+
+## Boundary (테스트·계약)
+
+- 테스트: `tests/test_validate_lines.py` — 공개 API `validate_lines`만 검증한다.
+- Test Loop 최소 시나리오:
+  - TC1: 10선 모두 합 34 → `pass`, `failed_lines == []`
+  - TC2: 행·열 OK, 대각선 1개만 불일치 → `fail`, 실패 대각선 ID 포함
+  - TC3: 구현이 대각선을 생략하면 테스트가 Rule 위반을 잡아야 한다
+- 내부 헬퍼·private 함수는 Boundary 밖; 테스트는 결과 dict 계약만 assert한다.
+
+---
+
+## TDD (RED → GREEN → REFACTOR)
+
+- 사이클을 엄수한다. **RED** 단계에서는 `tests/`만 수정하고 `src/`는 건드리지 않는다.
+- **GREEN**에서 `src/` 구현으로 테스트를 통과시킨다. **REFACTOR**는 green 유지하며 중복·명명만 정리한다.
+- assert 완화, `@pytest.mark.skip`, `xfail`, 테스트 삭제로 red를 숨기지 않는다.
+- 한 번에 한 동작(한 테스트 또는 한 실패)만 추가한다.
+
+---
+
+## AI 어시스턴트
+
+- 사용자와 대화·설명·주석은 **한국어**로 한다.
+- TDD 작업 시 **응답 첫 줄**에 현재 Phase를 선언한다: `Phase: RED` | `GREEN` | `REFACTOR`
+- Phase와 수정 파일이 일치해야 한다 (RED → tests만, GREEN/REFACTOR → src 중심).
+- 요청 범위 밖 파일·기능(솔버, 앱, Rule/Command 문서 자동 생성)은 만들지 않는다.
+- **git commit**은 사용자가 명시적으로 요청할 때만 수행한다.
