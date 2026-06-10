@@ -50,3 +50,16 @@ def test_incomplete_when_blank_present():
     grid[0][0] = 0
     result = validate_lines(grid)
     assert result["status"] == "incomplete"
+
+
+def test_fail_includes_r1_when_row_sum_not_34():
+    # Arrange — TC1 기반, R1 우하단 13→14 (합 35)
+    grid = [row[:] for row in TC1_PASS_GRID]
+    grid[0][3] = 14
+
+    # Act
+    result = validate_lines(grid)
+
+    # Assert
+    assert result["status"] == "fail"
+    assert "R1" in result["failed_lines"]
