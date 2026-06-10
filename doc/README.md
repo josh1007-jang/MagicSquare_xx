@@ -33,11 +33,11 @@
 | 1 | 개요 | Control + Entity ECB |
 | 2 | 문제 정의 | Mom Test |
 | 3~4 | R-G-I-O · 성공 기준 | SC1~SC7 |
-| 5 | 범위 | In / Out (step A In) |
+| 5 | 범위 | In / Out (step A In, UI Out) |
 | 6~7 | ECB · Entity | 10선, Entity API |
 | 8 | Control — API | `validate_lines`, F1~F7 |
 | 9 | Test Loop | Boundary 5 + Entity 2 |
-| 10 | TDD · C2C · Commands | ARRR, `/red-test-plan` |
+| 10 | TDD · C2C · Commands | ARRR, Layer·Track, 8 커맨드 |
 | 11 | 프로젝트 구조 | 디렉터리 맵 |
 | 12 | 워크북 ↔ 계약 갭 | 알려진 차이 |
 | 13 | 마일스톤 | **7 passed** |
@@ -72,44 +72,102 @@ compute_line_sum(grid, "R1")      # → int
 - **10선:** `R1`~`R4`, `C1`~`C4`, `D1`, `D2`
 - **마법상수:** `34` (`src/entity/validation.py`)
 
+### UI (설계 예시 — PRD §5.2 Out of Scope)
+
+```python
+# 미구현 — `/verify-magic-square` Command 대응 (워크북 §8계층)
+from src.ui.verify_magic_square import verify_magic_square  # RED 후보
+
+verify_magic_square(grid)  # 입력 OK → validate_lines 위임
+                           # 입력 NG → {"status":"error", "code":"E003"|"E004", ...}
+```
+
 ---
 
 ## Test Loop (요약)
 
-### Boundary — `tests/test_validate_lines.py`
+### Boundary (Logic) — `tests/test_validate_lines.py`
 
-| ID | 시나리오 | 기대 |
-|----|----------|------|
-| TC1 | 10선 모두 34 | `pass`, `[]` |
-| TC2 | D1 불일치 | `fail`, `"D1" in failed_lines` |
-| TC3 | D2 불일치 | `fail`, `"D2" in failed_lines` |
-| incomplete | 빈칸 `0` | `incomplete` |
-| R1 fail | R1 합 ≠ 34 | `fail`, `"R1" in failed_lines` |
+| ID | 테스트 함수 | 시나리오 | 기대 |
+|----|-------------|----------|------|
+| TC1 | `test_tc1_all_ten_lines_pass` | 10선 모두 34 | `pass`, `[]` |
+| TC2 | `test_tc2_rows_cols_ok_diagonal_d1_fails` | D1 불일치 | `fail`, `"D1" in failed_lines` |
+| TC3 | `test_tc3_rows_cols_ok_diagonal_d2_fails` | D2 불일치 | `fail`, `"D2" in failed_lines` |
+| — | `test_incomplete_when_blank_present` | 빈칸 `0` | `incomplete` |
+| — | `test_fail_includes_r1_when_row_sum_not_34` | R1 합 ≠ 34 | `fail`, `"R1" in failed_lines` |
 
-### Entity — `tests/entity/`
+### Entity (Logic) — `tests/entity/`
 
-| Test ID | 시나리오 | 기대 |
-|---------|----------|------|
-| D-LOC-01 | G1 빈칸 좌표 | `[(2,3),(4,4)]` |
-| D-SOL-01 | G1 step A | `success`, `(2,3)`, `11` |
+| Test ID | 테스트 함수 | Given | Then |
+|---------|-------------|-------|------|
+| D-LOC-01 | `test_d_loc_01_find_blank_coords_returns_g1_blanks` | `grid_g1` | `[(2,3),(4,4)]` |
+| D-SOL-01 | `test_d_sol_01_step_a_success` | `grid_g1` | `success`, `(2,3)`, `11` |
 
-### RED 후보 (PRD §13)
+### G1 격자 (`tests/conftest.py`)
 
-- **D-LINE-C2-01** (FR-F3) — C2 열 불일치
-- **D-SOL-02-step-b** — G1 `(4,4)` → `1`
+```
+16  3  2 13
+ 5 10  0  8   ← (2,3)
+ 9  6  7 12
+ 4 15 14  0   ← (4,4)
+```
+
+### RED 후보
+
+| Track | ID | 설명 | 상태 |
+|-------|-----|------|:----:|
+| Logic | **D-LINE-C2-01** (FR-F3) | C2 열 불일치 → `fail`, `"C2" in failed_lines` | 🔲 |
+| Logic | **D-SOL-02** step B | G1 `(4,4)` → `1` | 🔲 |
+| UI | **U-IN-01** | `grid=None` → `E003`, `validate_lines` 미호출 | 🔲 설계 |
+| UI | **U-IN-02** | 3×3 등 비정형 → `E004`, `validate_lines` 미호출 | 🔲 설계 |
+
+Logic Track: `tests/test_validate_lines.py` · Entity: `tests/entity/`  
+UI Track: `tests/ui/` (미생성) — C2C `/red-test-plan` **Layer: boundary · Track: UI** 설계 예시
 
 ---
 
-## 관련 폴더
+## TDD · C2C (`/red-test-plan`)
 
-| 폴더 | 역할 |
-|------|------|
-| `src/entity/` | 10선 합 (`validation.py`) |
-| `src/` | Control, D-LOC, D-SOL step A |
-| `tests/` | Boundary + Entity (7 tests) |
-| `Report/` | Mom Test, 워크북, Export `01`~`03` |
-| `Prompting/` | Transcript, STEP 프롬프트 |
-| `.cursor/` | Commands 8종, Skills |
+| 선언 | 값 |
+|------|-----|
+| Phase | `red` \| `green` \| `refactor` |
+| Layer | `entity` (도메인·Entity API) \| `boundary` (공개 API dict 계약) |
+| Track | `Logic` (10선·좌표·step A) \| `UI` (입력 검증·Command — Out of Scope, 설계만) |
+
+**ARRR:** Arrange (Ask) → Red → Run (pytest) → Report  
+**C2C 4블록:** Rule1~3 · Track B · 테스트 플랜 · ECB·Mock (E001~E005)
+
+| 커맨드 | Phase | 역할 |
+|--------|-------|------|
+| `/red-test-plan` | RED | C2C 설계표·플랜 (파일 수정 없음) |
+| `/red-skeleton` | RED | 테스트 골격 1개 |
+| `/tdd-red` | RED | 실패 테스트 1개 |
+| `/green-minimal` | GREEN | 첫 FAIL 최소 구현 |
+| `/golden-master` | GREEN | ALL PASS |
+| `/refactor-smell` | REFACTOR | smell 진단 |
+| `/refactor-safe` | REFACTOR | smell 1건 정리 |
+| `/export` | EXPORT | Report + Transcript |
+
+---
+
+## 프로젝트 구조 (요약)
+
+```
+MagicSquare_xx/
+├── doc/              ← PRD.md, README.md (본 파일)
+├── src/
+│   ├── entity/validation.py
+│   ├── validate_lines.py
+│   ├── find_blank_coords.py
+│   └── solve_step_a.py
+├── tests/
+│   ├── conftest.py   ← G1_GRID, grid_g1
+│   ├── test_validate_lines.py
+│   └── entity/
+├── Report/           ← 01~03.REPORT.md, Mom Test, 워크북
+├── Prompting/
+└── .cursor/          ← commands 8종, skills 2종
+```
 
 ---
 
@@ -122,6 +180,7 @@ compute_line_sum(grid, "R1")      # → int
 | Entity D-LOC-01 · D-SOL-01 | ✅ |
 | REFACTOR (`entity/validation.py`) | ✅ |
 | Export 03 (ARRR 1사이클) | ✅ |
+| UI Track (U-IN-01 · U-IN-02) | 🔲 설계만 |
 
 ```bash
 python -m pytest tests/ -v
@@ -134,6 +193,6 @@ python -m pytest tests/ -v
 
 - `.cursor/skills/magic-square-tdd/SKILL.md`
 - `.cursor/skills/magic-square-docs/SKILL.md`
-- `.cursor/commands/red-test-plan.md` — C2C Ask (RED ③)
+- `.cursor/commands/red-test-plan.md` — C2C Ask (RED ③), Layer·Track 선언
 
 PRD 갱신 시 §7~§9와 `.cursorrules`를 함께 맞춘다.
