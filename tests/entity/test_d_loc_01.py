@@ -1,7 +1,10 @@
 """D-LOC-01 — Entity: 빈칸 좌표 탐색 (1-indexed row-major)."""
 
 from src.find_blank_coords import find_blank_coords
+from tests._approval import assert_matches_golden, format_u_out_loc_01
 from tests.entity.constants import BLANK, GRID_SIZE, MAGIC_CONSTANT, MAX_CELL
+
+GOLDEN_D_LOC_01_G1 = "d_loc_01_g1_blanks.approved.txt"
 
 
 def test_d_loc_01_find_blank_coords_returns_g1_blanks(grid_g1):
@@ -11,8 +14,9 @@ def test_d_loc_01_find_blank_coords_returns_g1_blanks(grid_g1):
     # Act
     result = find_blank_coords(grid_g1)
 
-    # Assert
+    # Assert — contract + U-OUT-LOC-01 golden (Track A)
     assert result == [(2, 3), (4, 4)]
+    assert_matches_golden(format_u_out_loc_01(result), GOLDEN_D_LOC_01_G1)
 
 
 def test_d_loc_01_blank_coords_row_major(grid_g1):
