@@ -1,3 +1,12 @@
+[project]
+name = "magic-square-xx"
+version = "0.2.0"
+description = "4×4 partial magic square — 10-line validation (ECB)"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+gui = ["PyQt6>=6.6"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

@@ -187,6 +187,8 @@ python -m pytest tests/ -v
 # → 7 passed in ~0.03s
 ```
 
+**GUI 데모:** `python -m src.boundary.app` (tkinter) · **PyQt6:** `pip install PyQt6` 후 `python -m src.boundary.qt_app`
+
 ---
 
 ## SSOT 참조 (Skills · 커맨드)
