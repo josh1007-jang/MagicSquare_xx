@@ -4,24 +4,25 @@
 
 | 파일 | 버전 | 내용 |
 |------|------|------|
-| [`PRD.md`](PRD.md) | 0.1 | Product Requirements Document — Mom Test, R-G-I-O, ECB, API 계약, Test Loop, 범위 |
+| [`PRD.md`](PRD.md) | 0.2 | Product Requirements Document — Mom Test, R-G-I-O, ECB, Control·Entity API, Test Loop |
 
 ---
 
 ## PRD 역할
 
-`PRD.md`는 아래 문서가 분산해 두었던 요구사항을 **한곳으로 통합**한다.
+`PRD.md`는 아래 문서·코드가 분산해 두었던 요구사항을 **한곳으로 통합**한다.
 
 | 출처 | PRD에서 다루는 내용 |
 |------|---------------------|
 | `Report/MomTest_STEP1_MagicSquare_xx.md` | 문제 정의, 페르소나, 증거 |
 | `Report/Session3_Workbook_MagicSquare_xx.md` | R-G-I-O, 성공 기준, 8계층 |
-| `.cursorrules` | Entity · Control · Boundary · TDD 규칙 |
-| `src/validate_lines.py`, `tests/test_validate_lines.py` | API 계약, Test Loop (TC1~TC3 + incomplete + R1) |
-| `Report/01.REPORT.md` | Harness·커서룰·TDD 커맨드 구축 |
-| `Report/02.REPORT.md` | 워크북 ↔ 계약 갭 (§12) |
+| `.cursorrules` | Entity · Control · Boundary · TDD |
+| `src/validate_lines.py`, `src/entity/validation.py` | Control·Entity 10선 |
+| `src/find_blank_coords.py`, `src/solve_step_a.py` | Entity D-LOC, D-SOL step A |
+| `tests/test_validate_lines.py`, `tests/entity/` | Boundary + Entity Test Loop |
+| `Report/01~03.REPORT.md` | Harness, 정합성 리뷰, ARRR 1사이클 |
 
-**충돌 시 우선순위:** `PRD.md` §7~§9 (API 계약) → `.cursorrules`
+**충돌 시 우선순위:** `PRD.md` §7~§9 → `.cursorrules`
 
 ---
 
@@ -29,48 +30,73 @@
 
 | § | 제목 | 용도 |
 |---|------|------|
-| 1 | 개요 | 프로젝트 한 줄 설명 |
+| 1 | 개요 | Control + Entity ECB |
 | 2 | 문제 정의 | Mom Test |
-| 3~4 | R-G-I-O · 성공 기준 | SC1~SC5 |
-| 5 | 범위 | In / Out Scope |
-| 6~7 | ECB · Entity | 10선, 마법상수 34 |
-| 8 | Control — API | `validate_lines(grid)` 계약 |
-| 9 | Boundary — Test Loop | TC1~TC3, incomplete, R1 fail |
-| 10 | TDD · 개발 프로세스 | RED / GREEN / REFACTOR, Skills, Commands |
+| 3~4 | R-G-I-O · 성공 기준 | SC1~SC7 |
+| 5 | 범위 | In / Out (step A In) |
+| 6~7 | ECB · Entity | 10선, Entity API |
+| 8 | Control — API | `validate_lines`, F1~F7 |
+| 9 | Test Loop | Boundary 5 + Entity 2 |
+| 10 | TDD · C2C · Commands | ARRR, `/red-test-plan` |
 | 11 | 프로젝트 구조 | 디렉터리 맵 |
 | 12 | 워크북 ↔ 계약 갭 | 알려진 차이 |
-| 13 | 마일스톤 | 현재 상태 |
-| 14 | 향후 검토 | v0.2+ 후보 |
+| 13 | 마일스톤 | **7 passed** |
+| 14 | 향후 검토 | v0.3+ |
 
 ---
 
 ## API 요약
 
+### Control — `validate_lines`
+
 ```python
 from src.validate_lines import validate_lines
 
 result = validate_lines(grid)
-# {
-#   "status": "pass" | "fail" | "incomplete",
-#   "failed_lines": ["R1", "D1", ...],  # pass 시 []
-# }
+# {"status": "pass"|"fail"|"incomplete", "failed_lines": [...]}
+```
+
+### Entity
+
+```python
+from src.find_blank_coords import find_blank_coords
+from src.solve_step_a import solve_step_a
+from src.entity.validation import compute_line_sum, MAGIC_CONSTANT
+
+find_blank_coords(grid)           # → [(2, 3), (4, 4)]  # G1, 1-indexed
+solve_step_a(grid)                # → {"status":"success", "coord":(2,3), "value":11}
+compute_line_sum(grid, "R1")      # → int
 ```
 
 - **Input:** 4×4 정수 격자 (`0`=빈칸, `1`~`16`)
 - **10선:** `R1`~`R4`, `C1`~`C4`, `D1`, `D2`
-- **마법상수:** `34` (`MAGIC_CONSTANT`)
+- **마법상수:** `34` (`src/entity/validation.py`)
 
 ---
 
 ## Test Loop (요약)
 
-| 테스트 | 시나리오 | 기대 |
-|--------|----------|------|
-| TC1 | 10선 모두 합 34 | `pass`, `failed_lines == []` |
-| TC2 | 행·열 OK, D1 불일치 | `fail`, `"D1" in failed_lines` |
-| TC3 | 행·열 OK, D2 불일치 | `fail`, `"D2" in failed_lines` |
-| incomplete | TC1에 빈칸(`0`) 1개 | `incomplete` |
-| R1 fail | TC1 기반 R1 합 ≠ 34 | `fail`, `"R1" in failed_lines` |
+### Boundary — `tests/test_validate_lines.py`
+
+| ID | 시나리오 | 기대 |
+|----|----------|------|
+| TC1 | 10선 모두 34 | `pass`, `[]` |
+| TC2 | D1 불일치 | `fail`, `"D1" in failed_lines` |
+| TC3 | D2 불일치 | `fail`, `"D2" in failed_lines` |
+| incomplete | 빈칸 `0` | `incomplete` |
+| R1 fail | R1 합 ≠ 34 | `fail`, `"R1" in failed_lines` |
+
+### Entity — `tests/entity/`
+
+| Test ID | 시나리오 | 기대 |
+|---------|----------|------|
+| D-LOC-01 | G1 빈칸 좌표 | `[(2,3),(4,4)]` |
+| D-SOL-01 | G1 step A | `success`, `(2,3)`, `11` |
+
+### RED 후보 (PRD §13)
+
+- **D-LINE-C2-01** (FR-F3) — C2 열 불일치
+- **D-SOL-02-step-b** — G1 `(4,4)` → `1`
 
 ---
 
@@ -78,11 +104,12 @@ result = validate_lines(grid)
 
 | 폴더 | 역할 |
 |------|------|
-| `src/` | Control 구현 (`validate_lines`) |
-| `tests/` | Boundary — Test Loop (5 tests) |
-| `Report/` | Mom Test, 워크북, 세션 Export (`01`, `02`) |
-| `Prompting/` | 프롬프트·Transcript |
-| `.cursor/` | TDD·Export 슬래시 커맨드 8종, Skills |
+| `src/entity/` | 10선 합 (`validation.py`) |
+| `src/` | Control, D-LOC, D-SOL step A |
+| `tests/` | Boundary + Entity (7 tests) |
+| `Report/` | Mom Test, 워크북, Export `01`~`03` |
+| `Prompting/` | Transcript, STEP 프롬프트 |
+| `.cursor/` | Commands 8종, Skills |
 
 ---
 
@@ -91,22 +118,22 @@ result = validate_lines(grid)
 | 단계 | 상태 |
 |------|:----:|
 | Mom Test · 워크북 · Harness · Skills · Commands | ✅ |
-| RED (5 tests) | ✅ |
-| GREEN (`validate_lines` 구현) | 🔲 |
-| REFACTOR | 🔲 |
+| Control GREEN (validate_lines 5 tests) | ✅ |
+| Entity D-LOC-01 · D-SOL-01 | ✅ |
+| REFACTOR (`entity/validation.py`) | ✅ |
+| Export 03 (ARRR 1사이클) | ✅ |
 
 ```bash
-pytest tests/test_validate_lines.py -v
-# → 5 failed — NotImplementedError (RED, GREEN 대기)
+python -m pytest tests/ -v
+# → 7 passed in ~0.03s
 ```
 
 ---
 
 ## SSOT 참조 (Skills · 커맨드)
 
-다음 파일에서 `doc/PRD.md`를 SSOT로 참조한다.
-
 - `.cursor/skills/magic-square-tdd/SKILL.md`
 - `.cursor/skills/magic-square-docs/SKILL.md`
+- `.cursor/commands/red-test-plan.md` — C2C Ask (RED ③)
 
-PRD 갱신 시 §7~§9 (Entity · API · Test Loop)와 `.cursorrules`를 함께 맞춘다.
+PRD 갱신 시 §7~§9와 `.cursorrules`를 함께 맞춘다.

@@ -3,19 +3,27 @@
 | 항목 | 내용 |
 |------|------|
 | **프로젝트** | MagicSquare_xx |
-| **버전** | 0.1 (세션 3 — 10선 검증) |
+| **버전** | 0.2 (세션 3 — 10선 검증 + Entity 보조) |
 | **작성일** | 2026-06-10 |
 | **최종 갱신** | 2026-06-10 |
 | **SSOT 역할** | Mom Test·워크북·`.cursorrules`·API 계약·Test Loop의 단일 요구사항 기준 |
-| **관련 문서** | `Report/MomTest_STEP1_MagicSquare_xx.md`, `Report/Session3_Workbook_MagicSquare_xx.md`, `Report/01.REPORT.md`, `Report/02.REPORT.md`, `.cursorrules`, `doc/README.md` |
+| **관련 문서** | `Report/MomTest_STEP1_MagicSquare_xx.md`, `Report/Session3_Workbook_MagicSquare_xx.md`, `Report/01.REPORT.md`, `Report/02.REPORT.md`, `Report/03.REPORT.md`, `.cursorrules`, `doc/README.md` |
 
 ---
 
 ## 1. 개요
 
-MagicSquare_xx는 4×4 **부분 마방진** 격자에서 행·열·대각선 **10개 선**의 합이 마법상수 34인지 **빠짐없이** 검증하는 라이브러리이다. Mom Test에서 드러난 “검증 항목 하나를 빠뜨려 20분을 낭비하는” 문제를, **전수 검증 + 실패 선 식별**로 조기에 드러내는 것이 목적이다.
+MagicSquare_xx는 4×4 **부분 마방진** 격자를 다루는 ECB 라이브러리이다. **Control**(`validate_lines`)은 행·열·대각선 **10개 선**의 합이 마법상수 34인지 **빠짐없이** 검증하고, **Entity** 계층은 빈칸 좌표 탐색·10선 합 계산·부분 솔버 step A 등 도메인 연산을 제공한다.
 
-이번 범위는 **ECB 패턴의 Control 계층**(`validate_lines`)과 **Boundary**(pytest Test Loop) 구현·검증이다. 솔버, UI, 배포는 범위 밖이다.
+Mom Test에서 드러난 “검증 항목 하나를 빠뜨려 20분을 낭비하는” 문제를, **전수 검증 + 실패 선 식별**로 조기에 드러내는 것이 핵심 목적이다.
+
+| 계층 | 역할 | 진입점 |
+|------|------|--------|
+| **Control** | 10선 검증 오케스트레이션 | `validate_lines(grid)` |
+| **Entity** | 10선 합·빈칸·step A 솔버 | `compute_line_sum`, `find_blank_coords`, `solve_step_a` |
+| **Boundary** | pytest 공개 API 계약 | `tests/test_validate_lines.py`, `tests/entity/` |
+
+UI·전체 솔버·배포는 범위 밖이다.
 
 ### 1.1 프로젝트 맥락 (Mom Test 과제)
 
@@ -23,7 +31,7 @@ MagicSquare_xx는 4×4 **부분 마방진** 격자에서 행·열·대각선 **1
 |------|------|
 | 과제 | 4×4 마방진에서 빈칸 2개를 찾아 1~16으로 채워 완성 (목표 합 = 34) |
 | 설계 패턴 | ECB (Entity–Control–Boundary) |
-| 실습 목표 | ECB 분류, 실패 조건(Problem Recognition) 도출 |
+| 실습 목표 | ECB 분류, 실패 조건(Problem Recognition) 도출, TDD ARRR |
 
 ---
 
@@ -49,7 +57,7 @@ MagicSquare_xx는 4×4 **부분 마방진** 격자에서 행·열·대각선 **1
 
 Q3: "그 20분 끝에 대각선을 빼먹었다는 걸 **언제·무엇을 보고** 알아챘나요?" — 인터뷰 종료로 미응답. 실패 메시지·UX 문구 검증 시 보완 예정 (§14).
 
-### 2.5 표면 문제 (이번 범위 밖 — 제품 정의 금지)
+### 2.5 표면 문제 (제품 정의 금지 · 전체 솔버/UI)
 
 - "4×4 부분 마방진 **검증 프로그램**을 만들면 좋겠어."
 - "행·열·대각선 합을 **자동으로 체크해 주는 도구**가 필요해."
@@ -70,7 +78,7 @@ Q3: "그 20분 끝에 대각선을 빼먹었다는 걸 **언제·무엇을 보�
 | **Role** | 4×4 부분 마방진 실습 학습자 |
 | **Goal** | 행 4개·열 4개·대각선 2개 **총 10개 항목**을 모두 확인했을 때만 완성으로 판정하고, 하나라도 34가 아니면 **어느 항목**인지 즉시 알 수 있다 |
 | **Input** | 4×4 정수 격자 (`list[list[int]]`). `0`=빈칸, 채워진 칸=`1`~`16`. 마법상수 `34`는 API 인자가 아닌 상수(`MAGIC_CONSTANT`) |
-| **Output** | `status` (`pass` \| `fail` \| `incomplete`) + `failed_lines` (실패·미완성 관련 선 ID 리스트) |
+| **Output** | `validate_lines`: `status` + `failed_lines` · Entity: 좌표 리스트·step A `{status, coord, value}` |
 
 ---
 
@@ -78,75 +86,89 @@ Q3: "그 20분 끝에 대각선을 빼먹었다는 걸 **언제·무엇을 보�
 
 | # | 기준 | Mom Test 연결 | 검증 방법 |
 |---|------|---------------|-----------|
-| SC1 | 검증 범위에 **대각선 2개(D1, D2)가 명시·실행**되며, 행·열만 맞고 대각선 하나만 틀린 격자에서 **fail + 실패 대각선 식별** | 증거 ③ "대각선 하나를 빼먹어서" | TC2, TC3 |
-| SC2 | ECB·실습과 동일 맥락(빈칸, 합 34, 4×4)의 **재현 시나리오**가 Test Loop에 포함 | 증거 ①·② | TC1~TC3 픽스처 격자 |
-| SC3 | 행·열만 확인한 **부분 검증**으로는 "완성" 판정 불가 — 10항목 전수 검증으로 틀림 특정 | 증거 ③ "20분 날렸어" | TC3 (D2 생략 시 fail 미검출 → Rule 위반) |
-| SC4 | 빈칸(`0`)이 하나라도 있으면 **완성 판정 불가** → `incomplete` | — | `test_incomplete_when_blank_present` |
-| SC5 | 행·열·대각선 외 **개별 선(행) 불일치** 시 해당 선 ID를 `failed_lines`에 포함 | Goal "어느 항목인지" | `test_fail_includes_r1_when_row_sum_not_34` |
+| SC1 | **대각선 2개(D1, D2)** 명시·실행, 행·열만 맞고 대각선 하나만 틀린 격자에서 **fail + 실패 대각선 식별** | 증거 ③ | TC2, TC3 |
+| SC2 | ECB·실습 맥락(빈칸, 합 34, 4×4) **재현 시나리오** Test Loop 포함 | 증거 ①·② | TC1~TC3, G1 |
+| SC3 | **부분 검증**으로 완성 판정 불가 — 10항목 전수로 틀림 특정 | 증거 ③ "20분" | TC3 |
+| SC4 | 빈칸(`0`) 1개 이상 → **`incomplete`** | — | `test_incomplete_when_blank_present` |
+| SC5 | **개별 선(행) 불일치** 시 해당 선 ID를 `failed_lines`에 포함 | Goal | `test_fail_includes_r1_when_row_sum_not_34` |
+| SC6 | G1 격자 **빈칸 좌표** row-major 1-indexed 반환 | Entity | D-LOC-01 |
+| SC7 | G1 **첫 빈칸** row-major step A — 행합 34로 `value` 도출 | Entity | D-SOL-01 |
 
 ---
 
 ## 5. 범위
 
-### 5.1 In Scope (이번 PRD · 세션 3)
+### 5.1 In Scope (PRD v0.2)
 
 | 항목 | 설명 | 상태 |
 |------|------|:----:|
-| Entity 규칙 | 4×4 격자, 0=빈칸, 1~16, 마법상수 34, 10선 전수 검사 | ✅ 정의 |
-| Control API | `src/validate_lines.py` — `validate_lines(grid)` | 🔲 스텁 |
-| Boundary 테스트 | `tests/test_validate_lines.py` — TC1~TC3 + incomplete + R1 fail | ✅ RED |
-| TDD 워크플로 | RED → GREEN → REFACTOR (`.cursorrules`, TDD Skill) | ✅ |
-| Harness | `pyproject.toml`, pytest 설정 | ✅ |
-| Cursor Skills | `magic-square-tdd`, `magic-square-docs` | ✅ |
-| Cursor Commands | TDD 7종 + `/export` (§10.3) | ✅ |
-| PRD · doc | `doc/PRD.md`, `doc/README.md` | ✅ |
-| 세션 Export | `Report/01.REPORT.md`, `Report/02.REPORT.md` | ✅ |
+| Entity 규칙 | 4×4, 0=빈칸, 1~16, 마법상수 34, 10선 | ✅ |
+| Entity — 10선 합 | `src/entity/validation.py` — `_sum_cells`, `compute_line_sum` | ✅ |
+| Entity — 빈칸 좌표 | `src/find_blank_coords.py` — D-LOC-01 | ✅ |
+| Entity — step A 솔버 | `src/solve_step_a.py` — 첫 빈칸 행합 도출 (D-SOL-01) | ✅ |
+| Control API | `src/validate_lines.py` — `validate_lines(grid)` | ✅ GREEN |
+| Boundary 테스트 | `tests/test_validate_lines.py` — 5건 | ✅ |
+| Entity 테스트 | `tests/entity/` — D-LOC-01, D-SOL-01 | ✅ |
+| 공유 픽스처 | `tests/conftest.py` — `G1_GRID`, `grid_g1` | ✅ |
+| TDD · ARRR · C2C | RED→GREEN→REFACTOR, `/red-test-plan` C2C 4블록 | ✅ |
+| Harness · Skills · Commands | pytest, 8 슬래시 커맨드, 2 Skills | ✅ |
+| PRD · doc · Export | `doc/`, `Report/01~03` | ✅ |
 
-### 5.2 Out of Scope (명시적 제외)
+### 5.2 Out of Scope
 
 | 항목 | 사유 |
 |------|------|
-| 마방진 **솔버** · 빈칸 자동 채우기 | Mom Test 표면 문제 |
-| **UI** · 독립 앱 · CLI | 제품화 범위 밖 |
-| **배포** · CI 파이프라인 | 세션 3 범위 밖 |
-| Rule · Command **문서 자동 생성** | 별도 세션 |
-| 8계층 중 Agent · 전체 구현 · ECB 분류 도구 | 워크북 8계층 표 "범위 밖" |
-| 빈칸 **개수=2** 강제 검증 | Input은 0 포함 여부만 검사; 개수는 도메인 가정 |
-| 10선 **개별 합 값** 반환 (pass 시) | 현재 API 계약에 미포함 (향후 확장 후보) |
-| 도메인 위반(1~16 범위 밖, 중복) 검증 | Entity 규칙에 언급; Boundary 테스트 범위 밖 |
+| **전체 마방진 솔버** · step B 이후 · 빈칸 자동 완성 | Mom Test 표면 문제; step A만 Entity 실험 범위 |
+| **UI** · CLI · 독립 앱 | 제품화 범위 밖 |
+| **배포** · CI | 세션 3 범위 밖 |
+| Rule · Command 문서 자동 생성 | 별도 세션 |
+| 빈칸 **개수=2** 강제 검증 | `0` 1개 이상 → `incomplete`만 |
+| F4: fail/incomplete 시 **선별 합 값** 반환 | API 계약 미포함 |
+| 1~16 **중복·범위 밖** 검증 | Entity 규칙 언급; 테스트 범위 밖 |
+| **UI Track** 테스트 | PRD Logic Track only |
 
 ---
 
 ## 6. 아키텍처 (ECB)
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Boundary — tests/test_validate_lines.py                │
-│  공개 API validate_lines() 결과 dict 만 assert           │
-└──────────────────────────┬──────────────────────────────┘
-                           │ 호출
-┌──────────────────────────▼──────────────────────────────┐
-│  Control — src/validate_lines.py                        │
-│  validate_lines(grid) → { status, failed_lines }        │
-└──────────────────────────┬──────────────────────────────┘
-                           │ Entity 규칙 준수
-┌──────────────────────────▼──────────────────────────────┐
-│  Entity — 도메인 불변 규칙                               │
-│  4×4, 0=빈칸, 1~16, 합=34, 10선 R1~R4·C1~C4·D1·D2      │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  Boundary                                                    │
+│  tests/test_validate_lines.py  ·  tests/entity/             │
+│  tests/conftest.py (G1)                                      │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ 공개 API만 assert
+┌──────────────────────────▼──────────────────────────────────┐
+│  Control — src/validate_lines.py                            │
+│  validate_lines(grid) → { status, failed_lines }            │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────────┐
+│  Entity                                                      │
+│  entity/validation.py  — MAGIC_CONSTANT, compute_line_sum   │
+│  find_blank_coords.py    — 빈칸 (row,col) 1-indexed         │
+│  solve_step_a.py         — 첫 빈칸 행합 value (step A)      │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### 6.1 8계층 매핑 (세션 3)
+### 6.1 8계층 매핑
 
 | 계층 | 상태 | 산출물 |
 |------|:----:|--------|
-| Mom Test / 페르소나 | ✅ 완료 | `Report/MomTest_STEP1_MagicSquare_xx.md`, `Report/MomTest_STEP1_Questions_MagicSquare_xx.md` |
-| 주제 · R-G-I-O | ✅ 완료 | `Report/Session3_Workbook_MagicSquare_xx.md`, 본 PRD |
-| **Rule** | ✅ 정의 | Entity 규칙 (`.cursorrules`, §7) |
-| **Command** | 🔶 부분 | TDD·Export 슬래시 커맨드 8종 (§10.3). 워크북 예시 `/verify-magic-square`는 미구현 |
-| **Skill** | ✅ | `.cursor/skills/magic-square-tdd`, `magic-square-docs` |
-| **Test Loop** | ✅ 정의 | TC1~TC3 + incomplete + R1 fail (§9) |
-| Agent / 구현 / 배포 | — | 범위 밖 |
+| Mom Test / 페르소나 | ✅ | `Report/MomTest_STEP1_*.md` |
+| 주제 · R-G-I-O | ✅ | 워크북, 본 PRD |
+| **Rule** | ✅ | `.cursorrules`, §7 |
+| **Command** | 🔶 | TDD·Export 8종; `/verify-magic-square` 미구현 |
+| **Skill** | ✅ | `magic-square-tdd`, `magic-square-docs` |
+| **Test Loop** | ✅ | Boundary 5 + Entity 2 (§9) |
+| Agent / 배포 | — | 범위 밖 |
+
+### 6.2 알려진 ECB 부채
+
+| 항목 | 내용 |
+|------|------|
+| `solve_step_a` → `validate_lines` import | `MAGIC_CONSTANT`를 Control에서 가져옴; Entity 공용(`entity.validation`)으로 이동 권장 |
+| blank row-major 스캔 | `find_blank_coords`와 `solve_step_a` 중복 |
 
 ---
 
@@ -154,34 +176,53 @@ Q3: "그 20분 끝에 대각선을 빼먹었다는 걸 **언제·무엇을 보�
 
 ### 7.1 격자
 
-- 형식: 4×4 정수 2차원 리스트 `list[list[int]]`
-- `0`: 빈칸 (미완성)
-- 채워진 칸: `1`~`16` (중복·범위 밖 값은 도메인 위반 — 본 세션 테스트 범위 밖)
+- 형식: 4×4 `list[list[int]]`
+- `0`: 빈칸 · 채워진 칸: `1`~`16` (중복·범위 밖 = 도메인 위반, 테스트 범위 밖)
 
-### 7.2 마법상수
+### 7.2 마법상수 · 10선
 
-- `MAGIC_CONSTANT = 34`
-- pass 판정 대상: 각 선(行)의 합이 34
+- `MAGIC_CONSTANT = 34` (`src/entity/validation.py`; `validate_lines` re-export)
+- 10선: `R1~R4`, `C1~C4`, `D1`, `D2` — **전수 검사 필수**
 
-### 7.3 검증 선 10개 (전수 검사 필수)
+| ID | 인덱스 |
+|----|--------|
+| R1~R4 | `grid[row][col]`, row=0..3 |
+| C1~C4 | col=0..3 |
+| D1 | `(0,0)(1,1)(2,2)(3,3)` |
+| D2 | `(0,3)(1,2)(2,1)(3,0)` |
 
-| ID | 설명 | 인덱스 |
-|----|------|--------|
-| R1~R4 | 행 1~4 | `grid[row][col]`, row=0..3 |
-| C1~C4 | 열 1~4 | `grid[row][col]`, col=0..3 |
-| D1 | 좌상→우하 대각선 | `(0,0),(1,1),(2,2),(3,3)` |
-| D2 | 우상→좌하 대각선 | `(0,3),(1,2),(2,1),(3,0)` |
-
-**규칙:** 10선 중 **하나라도 검사를 생략하면 Rule 위반**이다.
-
-### 7.4 상태 판정 규칙
+### 7.3 상태 판정 (`validate_lines`)
 
 | 조건 | status | failed_lines |
 |------|--------|--------------|
-| 격자에 `0`이 1개 이상 | `incomplete` | 미완성 관련 선 (구현 시 정책에 따름; 최소 계약은 status만 assert) |
-| 10선 모두 합 34 | `pass` | `[]` |
-| 하나 이상 합 ≠ 34 | `fail` | 합이 34가 아닌 선 ID 포함 (예: `["D1"]`, `["R1"]`) |
-| 행·열만 34, 대각선 1개만 ≠ 34 | `fail` | 해당 대각선 ID 포함 |
+| `0` 1개 이상 | `incomplete` | `[]` (최소 계약: status만 assert) |
+| 10선 모두 34 | `pass` | `[]` |
+| 하나 이상 ≠ 34 | `fail` | 불일치 선 ID 목록 |
+
+### 7.4 Entity API — `find_blank_coords`
+
+```python
+find_blank_coords(grid: list[list[int]]) -> list[tuple[int, int]]
+```
+
+- `0` 위치를 **1-indexed (row, col)**, **row-major** 순
+
+### 7.5 Entity API — `compute_line_sum`
+
+```python
+compute_line_sum(grid: list[list[int]], line_id: str) -> int
+```
+
+- 단일 선 합; `line_id` ∈ `LINE_IDS`
+
+### 7.6 Entity API — `solve_step_a`
+
+```python
+solve_step_a(grid: list[list[int]]) -> dict
+# {"status": "success", "coord": (row, col), "value": int}  # 1-indexed
+```
+
+- row-major **첫** 빈칸에 대해 **행합 34**로 `value` 계산 (격자 변경 없음)
 
 ---
 
@@ -190,105 +231,78 @@ Q3: "그 20분 끝에 대각선을 빼먹었다는 걸 **언제·무엇을 보�
 ### 8.1 진입점
 
 ```python
-# src/validate_lines.py
-MAGIC_CONSTANT = 34
+from src.validate_lines import validate_lines, MAGIC_CONSTANT, LINE_IDS
 
-LINE_IDS = (
-    "R1", "R2", "R3", "R4",
-    "C1", "C2", "C3", "C4",
-    "D1", "D2",
-)
-
-def validate_lines(grid: list[list[int]]) -> dict:
-    ...
+def validate_lines(grid: list[list[int]]) -> dict: ...
 ```
-
-현재 구현: `raise NotImplementedError` (GREEN 대기).
 
 ### 8.2 반환값
 
 ```python
-{
-    "status": "pass" | "fail" | "incomplete",
-    "failed_lines": ["R1", "D1", ...],  # pass 시 []
-}
+{"status": "pass" | "fail" | "incomplete", "failed_lines": ["R1", "D1", ...]}
 ```
 
 ### 8.3 기능 요구사항
 
 | ID | 요구사항 | 우선순위 | 상태 |
 |----|----------|:--------:|:----:|
-| F1 | 4×4 격자의 10선 합을 **전수** 계산·검증한다 | P0 | 🔲 미구현 |
-| F2 | 10선 모두 합 34이면 `status="pass"`, `failed_lines=[]` | P0 | 🔲 |
-| F3 | 합 ≠ 34인 선 ID를 `failed_lines`에 포함한다 | P0 | 🔲 |
-| F4 | `fail`/`incomplete` 시 실패 선의 **합 값**을 함께 반환한다 | P2 (향후) | ❌ 범위 밖 |
-| F5 | 격자에 `0`이 있으면 `status="incomplete"` | P0 | 🔲 |
-| F6 | 대각선 D1·D2 검증을 **생략하지 않는다** (TC3으로 검증) | P0 | 🔲 |
-| F7 | 행(R1~R4) 불일치 시 해당 행 ID를 `failed_lines`에 포함한다 | P0 | 🔲 |
+| F1 | 10선 합 **전수** 계산·검증 | P0 | ✅ |
+| F2 | 10선 모두 34 → `pass`, `[]` | P0 | ✅ |
+| F3 | 합 ≠ 34 선 ID → `failed_lines` | P0 | ✅ (R1; C1~C4 후보 RED) |
+| F4 | fail/incomplete 시 **합 값** 반환 | P2 | ❌ 범위 밖 |
+| F5 | `0` 존재 → `incomplete` | P0 | ✅ |
+| F6 | D1·D2 **생략 금지** | P0 | ✅ |
+| F7 | 행 불일치 → 행 ID 포함 | P0 | ✅ (R1) |
 
-> **F4 참고:** `Report/02.REPORT.md` 리뷰에서 워크북 Output과의 갭으로 지적됨. 현재 Boundary 테스트·`.cursorrules` 계약에는 **선 ID만** 포함. F4는 후속 PRD 버전에서 `failed_line_sums` 등으로 확장 검토.
+### 8.4 Entity 기능 (Test ID)
+
+| ID | 요구사항 | 상태 |
+|----|----------|:----:|
+| D-LOC-01 | G1 → `[(2,3),(4,4)]` | ✅ |
+| D-SOL-01 | G1 step A → `(2,3)`, `11` | ✅ |
+| D-LINE-C2-01 | C2 열 fail + `"C2" in failed_lines` | 🔲 RED 후보 |
 
 ---
 
-## 9. Boundary — Test Loop
+## 9. Boundary · Entity — Test Loop
 
-### 9.1 테스트 파일
+### 9.1 Boundary — `tests/test_validate_lines.py`
 
-- 경로: `tests/test_validate_lines.py`
-- 대상: 공개 API `validate_lines`만 검증 (내부 헬퍼 private)
-- 현재: **5개** 테스트, 모두 RED (`NotImplementedError`)
+| ID | 테스트 함수 | 기대 |
+|----|-------------|------|
+| TC1 | `test_tc1_all_ten_lines_pass` | `pass`, `[]` |
+| TC2 | `test_tc2_rows_cols_ok_diagonal_d1_fails` | `fail`, `"D1" in failed_lines` |
+| TC3 | `test_tc3_rows_cols_ok_diagonal_d2_fails` | `fail`, `"D2" in failed_lines` |
+| — | `test_incomplete_when_blank_present` | `incomplete` |
+| — | `test_fail_includes_r1_when_row_sum_not_34` | `fail`, `"R1" in failed_lines` |
 
-### 9.2 시나리오
+### 9.2 Entity — `tests/entity/`
 
-| ID | 테스트 함수 | 설명 | 격자 | 기대 |
-|----|-------------|------|------|------|
-| **TC1** | `test_tc1_all_ten_lines_pass` | 10선 모두 합 34 | `TC1_PASS_GRID` (표준 4×4 마방진) | `status=="pass"`, `failed_lines==[]` |
-| **TC2** | `test_tc2_rows_cols_ok_diagonal_d1_fails` | 행·열 OK, **D1** 불일치 (인터뷰 재현) | `TC2_D1_FAIL_GRID` | `status=="fail"`, `"D1" in failed_lines` |
-| **TC3** | `test_tc3_rows_cols_ok_diagonal_d2_fails` | 행·열 OK, **D2** 불일치 (대각선 생략 방지) | `TC3_D2_FAIL_GRID` | `status=="fail"`, `"D2" in failed_lines` |
-| **—** | `test_incomplete_when_blank_present` | 빈칸 존재 | TC1에서 `[0][0]=0` | `status=="incomplete"` |
-| **—** | `test_fail_includes_r1_when_row_sum_not_34` | R1 행 합 불일치 | TC1 기반, `[0][3]` 13→14 (합 35) | `status=="fail"`, `"R1" in failed_lines` |
+| Test ID | 테스트 함수 | Given | Then |
+|---------|-------------|-------|------|
+| D-LOC-01 | `test_d_loc_01_find_blank_coords_returns_g1_blanks` | `grid_g1` | `[(2,3),(4,4)]` |
+| D-SOL-01 | `test_d_sol_01_step_a_success` | `grid_g1` | `success`, `(2,3)`, `11` |
 
-### 9.3 픽스처 격자 (현재 코드)
-
-**TC1_PASS_GRID** — 표준 4×4 마방진:
+### 9.3 G1 격자 (`tests/conftest.py`)
 
 ```
 16  3  2 13
- 5 10 11  8
+ 5 10  0  8   ← (2,3)
  9  6  7 12
- 4 15 14  1
+ 4 15 14  0   ← (4,4)
 ```
 
-**TC2_D1_FAIL_GRID** — 행·열 34, D1 불일치:
+### 9.4 TC1~TC3 픽스처
 
-```
- 8  8  9  9
- 8  8  9  9
- 8  8  9  9
-10 10  7  7
-```
+**TC1_PASS_GRID** — 표준 4×4 마방진 (G1의 빈칸 채운 완성형과 동일).
 
-**TC3_D2_FAIL_GRID** — 행·열 34, D2 불일치:
+**TC2_D1_FAIL_GRID** · **TC3_D2_FAIL_GRID** — `Report/01.REPORT.md` 설계 노트 참조.
 
-```
- 1 12 11 10
-14  5  6  9
- 7  8 15  4
-12  9  2 11
-```
-
-### 9.4 TC2·TC3 격자 설계 노트
-
-행·열 합 34이면서 D1만 실패하고 1~16 중복 없는 4×4 격자는 **수학적으로 존재하지 않을 수 있음**. 따라서 테스트는 **행·열 34 + 특정 대각선 불일치** 구조로 D1/D2 검증 생략을 각각 감지한다 (`Report/01.REPORT.md`).
-
-### 9.5 pytest 실행
+### 9.5 pytest
 
 ```bash
-# 전체
-pytest tests/test_validate_lines.py -v
-
-# 단일
-pytest tests/test_validate_lines.py::test_tc1_all_ten_lines_pass -v
+python -m pytest tests/ -v
+# → 7 passed
 ```
 
 ---
@@ -299,45 +313,38 @@ pytest tests/test_validate_lines.py::test_tc1_all_ten_lines_pass -v
 
 | Phase | 수정 허용 | 금지 |
 |-------|-----------|------|
-| **RED** | `tests/` | `src/` 수정, assert 완화, skip, xfail |
-| **GREEN** | `src/` | `tests/` 수정, 10선 생략 |
-| **REFACTOR** | `src/` (동작 불변) | API·Entity 변경, 테스트 수정 |
+| **RED** | `tests/` | `src/` |
+| **GREEN** | `src/` | `tests/` 수정·10선 생략 |
+| **REFACTOR** | `src/` (동작 불변) | API·Entity 변경 |
 
-### 10.2 ARRR 루프
+### 10.2 ARRR · C2C (`/red-test-plan`)
 
-1. **Arrange** — SSOT·pytest·격자·기대 dict·수정 파일 범위 확정
-2. **Red** — 실패 테스트 작성 (`tests/`만)
-3. **Run** — pytest 실행·구현·리팩터
-4. **Report** — Phase 선언 + 세션 Export (`/export`)
+1. **Arrange (Ask)** — PRD FR·Test Loop 갭·pytest
+2. **Red** — C2C 4블록 (Rule1~3, Track B, 플랜, ECB·Mock)
+3. **Run** — pytest
+4. **Report** — `/export` · `/red-skeleton` 준비
 
-### 10.3 슬래시 커맨드 (Cursor)
+필수 선언: `Phase: red | Layer: {entity|boundary} | Track: {Logic|UI}`
+
+### 10.3 슬래시 커맨드
 
 | 커맨드 | Phase | 역할 |
 |--------|-------|------|
-| `/red-test-plan` | RED | 다음 실패 테스트 계획만 (파일 수정 없음) |
-| `/red-skeleton` | RED | 테스트 골격 1개 추가 (`tests/`) |
-| `/tdd-red` | RED | 완전한 실패 테스트 1개 추가 (`tests/`) |
-| `/green-minimal` | GREEN | 첫 FAIL 1개 최소 구현 (`src/`) |
-| `/golden-master` | GREEN | 전체 스위트 ALL PASS |
-| `/refactor-smell` | REFACTOR | smell 진단만 (`src/` 수정 없음) |
-| `/refactor-safe` | REFACTOR | smell 1건 안전 정리 (`src/`, green 유지) |
-| `/export` | EXPORT | Report + Transcript 생성 |
+| `/red-test-plan` | RED | C2C 설계표·플랜 (파일 수정 없음) |
+| `/red-skeleton` | RED | 테스트 골격 1개 |
+| `/tdd-red` | RED | 실패 테스트 1개 |
+| `/green-minimal` | GREEN | 첫 FAIL 최소 구현 |
+| `/golden-master` | GREEN | ALL PASS |
+| `/refactor-smell` | REFACTOR | smell 진단 |
+| `/refactor-safe` | REFACTOR | smell 1건 정리 |
+| `/export` | EXPORT | Report + Transcript |
 
-권장 순서:
+### 10.4 Skills
 
-```
-/red-test-plan → /red-skeleton 또는 /tdd-red → /green-minimal → … → /golden-master
-→ /refactor-smell → /refactor-safe → /export
-```
+- `.cursor/skills/magic-square-tdd/SKILL.md`
+- `.cursor/skills/magic-square-docs/SKILL.md`
 
-### 10.4 Skills (Cursor Agent)
-
-| Skill | 경로 | 역할 |
-|-------|------|------|
-| `magic-square-tdd` | `.cursor/skills/magic-square-tdd/SKILL.md` | TDD Phase·ARRR·커맨드 맵·Test Loop |
-| `magic-square-docs` | `.cursor/skills/magic-square-docs/SKILL.md` | `/export`, Report·Transcript·체크리스트 템플릿 |
-
-SSOT 참조: 본 PRD, `.cursorrules`, `Report/Session3_Workbook_MagicSquare_xx.md`
+SSOT: 본 PRD, `.cursorrules`, `doc/PRD.md` (Skills 내 `docs/` 별칭 → `doc/` 통일 권장)
 
 ---
 
@@ -346,88 +353,71 @@ SSOT 참조: 본 PRD, `.cursorrules`, `Report/Session3_Workbook_MagicSquare_xx.m
 ```
 MagicSquare_xx/
 ├── doc/
-│   ├── PRD.md                      ← 본 문서 (SSOT)
-│   └── README.md                   ← doc 폴더 안내·API 요약
+│   ├── PRD.md
+│   └── README.md
 ├── src/
-│   └── validate_lines.py           ← Control (GREEN 대상, 현재 NotImplementedError)
+│   ├── entity/
+│   │   └── validation.py       ← MAGIC_CONSTANT, compute_line_sum
+│   ├── validate_lines.py       ← Control
+│   ├── find_blank_coords.py    ← Entity D-LOC
+│   └── solve_step_a.py         ← Entity D-SOL step A
 ├── tests/
-│   └── test_validate_lines.py      ← Boundary (Test Loop, 5 tests)
-├── Report/
-│   ├── MomTest_STEP1_MagicSquare_xx.md
-│   ├── MomTest_STEP1_Questions_MagicSquare_xx.md
-│   ├── Session3_Workbook_MagicSquare_xx.md
-│   ├── 01.REPORT.md                ← Harness·커서룰·TDD 커맨드 구축
-│   ├── 02.REPORT.md                ← 워크북 vs validate_lines 계약 정합성 리뷰
-│   └── README.md
-├── Prompting/
-│   ├── 01.Export-Transcript.md
-│   ├── 02.Export-Transcript.md
-│   ├── STEP1_*.md, STEP3_*.md      ← 세션 프롬프트·템플릿
-│   └── README.md
-├── .cursorrules                    ← Entity·Control·Boundary·TDD 규칙
-├── .cursor/
-│   ├── commands/                   ← TDD 7종 + export (8 files)
-│   └── skills/
-│       ├── magic-square-tdd/
-│       └── magic-square-docs/
-├── .gitignore
-└── pyproject.toml                  ← pytest 설정 (testpaths, pythonpath)
+│   ├── conftest.py             ← G1_GRID, grid_g1
+│   ├── test_validate_lines.py  ← Boundary (5)
+│   └── entity/
+│       ├── test_d_loc_01.py
+│       └── test_d_sol_01.py
+├── Report/                     ← 01~03.REPORT.md, Mom Test, 워크북
+├── Prompting/                  ← Export Transcript, STEP 프롬프트
+├── .cursorrules
+├── .cursor/commands/           ← 8 commands
+├── .cursor/skills/
+└── pyproject.toml
 ```
 
 ---
 
-## 12. 워크북 ↔ 계약 갭 (알려진 차이)
+## 12. 워크북 ↔ 계약 갭
 
-`Report/02.REPORT.md` 정합성 리뷰 기준. PRD v0.1은 **현재 API 계약**(`.cursorrules`, 테스트)을 SSOT로 채택한다.
-
-| 구분 | 워크북 | PRD / 계약 (채택) |
-|------|--------|-------------------|
-| Input | `목표 합 = 34`를 Input 항목 | `MAGIC_CONSTANT` 상수, grid 단일 인자 |
-| Input | `빈칸 2개` 조건 | `0` 1개 이상 → `incomplete` (개수 미검증) |
-| Output | 10개 항목별 합 출력 | pass 시 sum 목록 없음; fail 시 선 ID만 |
-| Output | 실패 시 합 값 | F4 — 향후 확장, 현재 범위 밖 |
-| Output | `incomplete` 상태 | 워크북 미기술 → PRD·테스트에 포함 |
-| Output | 줄 ID 규칙 | `R1~R4`, `C1~C4`, `D1`, `D2` (워크북 미정) |
-| TC3 | "부분 검증" API 감지 | `validate_lines`는 항상 10선 전검; TC3는 D2 생략 **구현** 감지 |
-| Test Loop | 픽스처 격자 미명시 | `tests/test_validate_lines.py`에 TC1~TC3 격자 정의 |
+| 구분 | 워크북 | PRD v0.2 (채택) |
+|------|--------|-----------------|
+| Input | 목표 합 34 | `MAGIC_CONSTANT` 상수 |
+| Input | 빈칸 2개 | `0` 1개 이상 → `incomplete` |
+| Output | 10항목별 합 | fail 시 선 ID만 |
+| Output | 실패 합 값 | F4 — 범위 밖 |
+| 솔버 | 표면 문제 | **step A만** Entity In Scope |
+| TC3 | 부분 검증 API | 10선 전검; D2 생략 **구현** 감지 |
 
 ---
 
 ## 13. 마일스톤 · 현재 상태
 
-| 단계 | 내용 | 상태 |
-|------|------|:----:|
-| STEP 1 | Mom Test 인터뷰·질문 뱅크 | ✅ |
-| STEP 3 | 세션 3 워크북 (R-G-I-O, 8계층) | ✅ |
-| Harness | pytest, src/tests 골격, `.cursorrules` | ✅ |
-| TDD 커맨드 | 8종 슬래시 커맨드 (`.cursor/commands/`) | ✅ |
-| Skills | `magic-square-tdd`, `magic-square-docs` | ✅ |
-| PRD · doc | `doc/PRD.md`, `doc/README.md` | ✅ |
-| Export 01 | Harness·커서룰·TDD 커맨드 세션 | ✅ |
-| Export 02 | 워크북 vs 계약 정합성 리뷰 | ✅ |
-| RED | TC1~TC3 + incomplete + R1 fail (5 tests) | ✅ |
-| GREEN | `validate_lines` 구현 | 🔲 (`NotImplementedError`) |
-| REFACTOR | 10선 검사 로직 정리 | 🔲 |
-
-**현재 pytest:** `5 failed` — `NotImplementedError` (RED, GREEN 대기)
+| 단계 | 상태 |
+|------|:----:|
+| Mom Test · 워크북 · Harness · Skills · Commands | ✅ |
+| Export 01 · 02 · 03 | ✅ |
+| Boundary RED → GREEN (5 tests) | ✅ |
+| Entity D-LOC-01 · D-SOL-01 | ✅ |
+| REFACTOR — `entity/validation.py` extract | ✅ |
+| **pytest 전체** | ✅ **7 passed** |
 
 ```bash
-pytest tests/test_validate_lines.py -v
-# → 5 failed in ~0.2s
+python -m pytest tests/ -v
+# → 7 passed in ~0.03s
 ```
 
-**다음 단계:** GREEN — `src/validate_lines.py` 구현으로 5 테스트 통과 → REFACTOR → `/export`
+**다음 RED 후보:** D-LINE-C2-01 (FR-F3) · D-SOL-02 step B · C1~C4 열 fail 확대
 
 ---
 
-## 14. 향후 검토 (PRD v0.2+)
+## 14. 향후 검토 (v0.3+)
 
-- [ ] Mom Test Q3 보완: 틀림을 **언제·무엇을 보고** 알았는지 → 실패 메시지·UX 문구 검증
-- [ ] F4: `fail`/`incomplete` 시 선별 **합 값** 반환 여부 결정
-- [ ] Rule · Command 문서화 (`/verify-magic-square` 등)
-- [ ] 워크북 Output 섹션을 본 PRD 계약에 맞게 갱신
-- [ ] 도메인 위반(1~16 범위 밖, 중복) 검증 요구사항 추가 여부
-- [ ] Skills 내 `docs/PRD.md` 참조를 `doc/PRD.md`로 통일
+- [ ] Mom Test Q3 보완 → 실패 메시지·UX
+- [ ] F4: `failed_line_sums` 확장
+- [ ] `MAGIC_CONSTANT` Entity 단일 SSOT (`solve_step_a` import 정리)
+- [ ] blank 스캔 공통화 (`find_blank_coords` 재사용)
+- [ ] `TC1_PASS_GRID` ↔ `G1_GRID` conftest 통합
+- [ ] PRD §5.2 vs Entity step A 범위 문서 정합 유지
 
 ---
 
@@ -435,14 +425,14 @@ pytest tests/test_validate_lines.py -v
 
 | 용어 | 정의 |
 |------|------|
-| 부분 마방진 | 빈칸(`0`)이 남아 있는 4×4 격자 |
-| 마법상수 | 4×4 마방진에서 각 선의 목표 합 = **34** |
+| 부분 마방진 | 빈칸(`0`)이 남은 4×4 격자 |
+| G1 | 빈칸 `(2,3)`, `(4,4)` — TC1 변형 |
 | 10선 | 행 4 + 열 4 + 대각선 2 |
-| Test Loop | TC1~TC3 + incomplete + R1 fail pytest 시나리오 |
-| ECB | Entity–Control–Boundary 패턴 |
-| ARRR | Arrange → Red → Run → Report (TDD 실습 루프) |
-| SSOT | Single Source of Truth — 본 PRD §7~§9 API 계약 |
+| Test Loop | Boundary 5 + Entity 2 |
+| C2C | Contract-to-Code — FR → To-Do → Given/When/Then |
+| ARRR | Arrange → Red → Run → Report |
+| ECB | Entity–Control–Boundary |
 
 ---
 
-*본 PRD는 MagicSquare_xx 세션 3의 단일 요구사항 기준(SSOT)이다. 구현·테스트·AI Skill은 본 문서와 `.cursorrules`가 충돌할 경우 **본 PRD §7~§9 API 계약**을 우선한다.*
+*본 PRD는 MagicSquare_xx의 SSOT이다. 충돌 시 **§7~§9 API·Test Loop 계약** → `.cursorrules` 순.*
